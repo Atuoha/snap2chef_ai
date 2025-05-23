@@ -8,7 +8,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:snap2chef/core/extensions/format_to_mb.dart';
 import 'package:snap2chef/infrastructure/image_upload_controller.dart';
 import 'package:snap2chef/infrastructure/recipe_controller.dart';
-import 'package:snap2chef/infrastructure/speech_to_text_controller.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
@@ -39,28 +39,17 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isRecording = false;
   bool isDoneRecording = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _model = GenerativeModel(model: AppStrings.AI_MODEL, apiKey: apiKey);
-    SpeechToTextController.initSpeech(_speechToText, (enabled) {
-      setState(() {
-        _speechEnabled = enabled;
-      });
-    });
-  }
-
-  // remove text
   void removeText() {
     setState(() {
       _query.clear();
       isDoneRecording = false;
+      _lastWords = "";
     });
+    _query.clear();
   }
 
-  // set keyword
-  void setKeyword() {
-    if (_lastWords.isEmpty) {
+  void setKeyword(String prompt) {
+    if (prompt.isEmpty) {
       toastInfo(msg: "You didn't say anything!", status: Status.error);
       setState(() {
         isDoneRecording = false;
@@ -70,34 +59,69 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     setState(() {
-      isRecording = false;
-      _query.text = _lastWords;
-      isDoneRecording = true;
       _lastWords = "";
+      isRecording = false;
+      _query.text = prompt;
+      isDoneRecording = true;
     });
   }
 
-  // set recording to true
-  void setRecording() {
+  void _initSpeech() async {
+    try {
+      _speechEnabled = await _speechToText.initialize(
+        onStatus: (status) => debugPrint('Speech status: $status'),
+        onError: (error) => debugPrint('Speech error: $error'),
+      );
+      if (!_speechEnabled) {
+        toastInfo(
+          msg: "Microphone permission not granted or speech not available.",
+          status: Status.error,
+        );
+      }
+      setState(() {});
+    } catch (e) {
+      debugPrint("Speech initialization failed: $e");
+    }
+  }
+
+  void _startListening() async {
     setState(() {
       isRecording = true;
-      isDoneRecording = false;
     });
-  }
+    if (!_speechEnabled) {
+      toastInfo(msg: "Speech not initialized yet.", status: Status.error);
+      return;
+    }
 
-  // set new state
-  void setNewState() {
+    await _speechToText.listen(onResult: _onSpeechResult);
     setState(() {});
   }
 
-  // set last words
-  void setLastWords(String words) {
+  void _stopListening() async {
+    await _speechToText.stop();
+    setKeyword(_lastWords);
+    setState(() {});
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
     setState(() {
-      _lastWords = words;
+      _lastWords = result.recognizedWords;
     });
   }
 
-  // assign cropped image
+  @override
+  void initState() {
+    super.initState();
+    _model = GenerativeModel(model: AppStrings.AI_MODEL, apiKey: apiKey);
+
+    _initSpeech();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   void assignCroppedImage(CroppedFile? croppedFile) {
     if (croppedFile != null) {
       setState(() {
@@ -106,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // set file
   void setFile(File? pickedFile) {
     setState(() {
       selectedFile = pickedFile;
@@ -115,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // remove file
   void removeFile() {
     setState(() {
       selectedFile = null;
@@ -220,18 +242,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           return;
                         }
                         if (_speechToText.isNotListening) {
-                          SpeechToTextController.startListening(
-                            setRecording,
-                            _speechEnabled,
-                            _speechToText,
-                            setNewState,
-                          );
+                          _startListening();
                         } else {
-                          SpeechToTextController.stopListening(
-                            _speechToText,
-                            setKeyword,
-                            setNewState,
-                          );
+                          _stopListening();
                         }
                       },
                       child: GlowingMicButton(
@@ -289,6 +302,24 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                     : SizedBox.shrink(),
               ],
+
+              const Gap(20),
+              selectedFile != null || _query.text.isNotEmpty
+                  ? GestureDetector(
+                      onTap: () {
+                        if (selectedFile != null) {
+                          removeFile();
+                        } else {
+                          removeText();
+                        }
+                      },
+                      child: CircleAvatar(
+                        backgroundColor: AppColors.primaryColor,
+                        radius: 30,
+                        child: Icon(Iconsax.close_circle, color: Colors.white),
+                      ),
+                    )
+                  : SizedBox.shrink(),
             ],
           ),
         ),

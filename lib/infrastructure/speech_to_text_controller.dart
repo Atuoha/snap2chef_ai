@@ -7,9 +7,9 @@ import '../presentation/components/toast_info.dart';
 
 class SpeechToTextController {
   static void initSpeech(
-    SpeechToText speechToText,
-    void Function(bool) setSpeechEnabled,
-  ) async {
+      SpeechToText speechToText,
+      void Function(bool) setSpeechEnabled,
+      ) async {
     try {
       final speechEnabled = await speechToText.initialize(
         onStatus: (status) => debugPrint('Speech status: $status'),
