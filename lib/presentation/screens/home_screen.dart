@@ -16,6 +16,7 @@ import '../../core/constants/enums/status.dart';
 import '../components/toast_info.dart';
 import '../widgets/glowing_microphone.dart';
 import '../widgets/image_previewer.dart';
+import '../widgets/query_text_box.dart';
 import '../widgets/upload_container.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -267,39 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
 
                 isDoneRecording
-                    ? TextFormField(
-                        controller: _query,
-                        maxLines: 4,
-                        autofocus: true,
-                        decoration: InputDecoration(
-                          hintStyle: TextStyle(color: AppColors.lighterGrey),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12.0),
-                            borderSide: BorderSide(color: Colors.grey.shade400),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12.0),
-                            borderSide: const BorderSide(
-                              color: AppColors.primaryColor,
-                              width: 2.0,
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12.0),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 12.0,
-                            horizontal: 16.0,
-                          ),
-                        ),
-                        style: const TextStyle(
-                          fontSize: 14.0,
-                          color: Colors.black,
-                        ),
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                      )
+                    ? QueryTextBox(query: _query)
                     : SizedBox.shrink(),
               ],
 
@@ -327,3 +296,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
