@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
         useDefaultLoading: false,
         overlayWidgetBuilder: (_) {
           return Center(
-            child: SpinKitChasingDots(color: AppColors.primaryColor, size: 50.0),
+            child: SpinKitWanderingCubes(color: AppColors.primaryColor, size: 50.0),
           );
         },
         child: const HomeScreen(),

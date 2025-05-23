@@ -6,4 +6,7 @@ class AppColors {
   static Color errorColor = const Color(0xFFEA5757);
   static const Color grey =
   Color.fromARGB(255, 170, 170, 170);
+
+  static const Color lighterGrey =
+  Color.fromARGB(255, 204, 204, 204);
 }

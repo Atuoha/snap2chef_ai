@@ -1,23 +1,20 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:audio_waveforms/audio_waveforms.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:record/record.dart';
 import 'package:snap2chef/core/extensions/format_to_mb.dart';
-import 'package:snap2chef/infrastructure/audio_recording_controller.dart';
 import 'package:snap2chef/infrastructure/image_upload_controller.dart';
 import 'package:snap2chef/infrastructure/recipe_controller.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:snap2chef/infrastructure/speech_to_text_controller.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../domain/model/recording.dart';
+import '../../core/constants/enums/status.dart';
+import '../components/toast_info.dart';
+import '../widgets/glowing_microphone.dart';
 import '../widgets/image_previewer.dart';
 import '../widgets/upload_container.dart';
 
@@ -29,67 +26,78 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final RecorderController recorderController;
   File? selectedFile;
   Completer? completer;
   String? fileName;
   int? fileSize;
-  late AudioPlayer audioPlayer;
-  late AudioRecorder audioRecord;
-  bool isRecording = false;
-  String? audioPath;
-  late Uuid uid;
-  bool isDoneRecording = false;
-  Recording recording = Recording.initialize();
   late GenerativeModel _model;
   String apiKey = "";
-
+  final TextEditingController _query = TextEditingController();
   final SpeechToText _speechToText = SpeechToText();
   bool _speechEnabled = false;
   String _lastWords = '';
-
-  void _initSpeech() async {
-    _speechEnabled = await _speechToText.initialize();
-    setState(() {});
-  }
-
-  void _startListening() async {
-    await _speechToText.listen(onResult: _onSpeechResult);
-    setState(() {});
-  }
-
-  void _stopListening() async {
-    await _speechToText.stop();
-    setState(() {});
-  }
-
-  void _onSpeechResult(SpeechRecognitionResult result) {
-    setState(() {
-      _lastWords = result.recognizedWords;
-    });
-  }
+  bool isRecording = false;
+  bool isDoneRecording = false;
 
   @override
   void initState() {
     super.initState();
-    audioPlayer = AudioPlayer();
-    audioRecord = AudioRecorder();
-    uid = const Uuid();
-
-    recorderController = RecorderController()
-      ..updateFrequency = const Duration(milliseconds: 50);
     _model = GenerativeModel(model: AppStrings.AI_MODEL, apiKey: apiKey);
-
-    _initSpeech();
+    SpeechToTextController.initSpeech(_speechToText, (enabled) {
+      setState(() {
+        _speechEnabled = enabled;
+      });
+    });
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-    audioRecord.dispose();
-    audioPlayer.dispose();
+  // remove text
+  void removeText() {
+    setState(() {
+      _query.clear();
+      isDoneRecording = false;
+    });
   }
 
+  // set keyword
+  void setKeyword() {
+    if (_lastWords.isEmpty) {
+      toastInfo(msg: "You didn't say anything!", status: Status.error);
+      setState(() {
+        isDoneRecording = false;
+        isRecording = false;
+      });
+      return;
+    }
+
+    setState(() {
+      isRecording = false;
+      _query.text = _lastWords;
+      isDoneRecording = true;
+      _lastWords = "";
+    });
+  }
+
+  // set recording to true
+  void setRecording() {
+    setState(() {
+      isRecording = true;
+      isDoneRecording = false;
+    });
+  }
+
+  // set new state
+  void setNewState() {
+    setState(() {});
+  }
+
+  // set last words
+  void setLastWords(String words) {
+    setState(() {
+      _lastWords = words;
+    });
+  }
+
+  // assign cropped image
   void assignCroppedImage(CroppedFile? croppedFile) {
     if (croppedFile != null) {
       setState(() {
@@ -98,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // set file
   void setFile(File? pickedFile) {
     setState(() {
       selectedFile = pickedFile;
@@ -106,31 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void startRecordingSetups(String filePath) {
-    setState(() {
-      isRecording = true;
-      isDoneRecording = false;
-      audioPath = filePath;
-    });
-  }
-
-  void stopRecordingSetups(Recording newRecording) {
-    setState(() {
-      recording = newRecording;
-    });
-
-    setState(() {
-      isRecording = false;
-      isDoneRecording = true;
-    });
-  }
-
-  void pauseRecordingSetups() {
-    setState(() {
-      recording.isPlaying = false;
-    });
-  }
-
+  // remove file
   void removeFile() {
     setState(() {
       selectedFile = null;
@@ -143,15 +128,15 @@ class _HomeScreenState extends State<HomeScreen> {
     Size size = MediaQuery.sizeOf(context);
 
     return Scaffold(
-      floatingActionButton: selectedFile != null
+      floatingActionButton: selectedFile != null || _query.text.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: () => RecipeController.sendRequest(
                 context,
                 selectedFile,
-                isDoneRecording,
-                recording,
                 _model,
                 removeFile,
+                _query.text,
+                removeText,
               ),
               backgroundColor: AppColors.primaryColor,
               icon: const Icon(Iconsax.send_1, color: Colors.white),
@@ -186,175 +171,124 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Gap(20),
-              !isRecording
-                  ? selectedFile != null
-                        ? ImagePreviewer(
-                            size: size,
-                            pickedFile: selectedFile,
-                            removeFile: removeFile,
-                            context: context,
-                            completer: completer,
-                            setFile: setFile,
-                            assignCroppedImage: assignCroppedImage,
-                          )
-                        : GestureDetector(
-                            onTap: () =>
-                                ImageUploadController.showFilePickerButtonSheet(
-                                  context,
-                                  completer,
-                                  setFile,
-                                  assignCroppedImage,
-                                ),
-                            child: UploadContainer(
-                              title: 'an image of a food or snack',
+              if (!isDoneRecording)
+                !isRecording
+                    ? selectedFile != null
+                          ? ImagePreviewer(
                               size: size,
-                            ),
-                          )
-                  : SizedBox.shrink(),
+                              pickedFile: selectedFile,
+                              removeFile: removeFile,
+                              context: context,
+                              completer: completer,
+                              setFile: setFile,
+                              assignCroppedImage: assignCroppedImage,
+                            )
+                          : GestureDetector(
+                              onTap: () =>
+                                  ImageUploadController.showFilePickerButtonSheet(
+                                    context,
+                                    completer,
+                                    setFile,
+                                    assignCroppedImage,
+                                  ),
+                              child: UploadContainer(
+                                title: 'an image of a food or snack',
+                                size: size,
+                              ),
+                            )
+                    : SizedBox.shrink(),
               const Gap(20),
 
               if (selectedFile == null) ...[
-                Text(
-                  "or record your voice",
-                  style: TextStyle(
-                    color: AppColors.grey,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w200,
+                if (!isDoneRecording) ...[
+                  Text(
+                    "or record your voice",
+                    style: TextStyle(
+                      color: AppColors.grey,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w200,
+                    ),
                   ),
-                ),
-                Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      if (isRecording) {
-                        AudioRecordingController.stopRecording(
-                          audioRecord,
-                          recorderController,
-                          uid,
-                          stopRecordingSetups,
-                        );
-                      } else {
-                        AudioRecordingController.startRecording(
-                          audioRecord,
-                          recorderController,
-                          startRecordingSetups,
-                          uid,
-                        );
-                      }
-                    },
-                    child: CircleAvatar(
-                      backgroundColor: AppColors.primaryColor,
-                      radius: 30,
-                      child: Center(
-                        child: Icon(
-                          isRecording ? Iconsax.stop : Iconsax.microphone,
-                          color: Colors.white,
-                        ),
+                  Center(
+                    child: GestureDetector(
+                      onTap: () {
+                        if (!_speechEnabled) {
+                          toastInfo(
+                            msg: "Speech recognition not ready yet.",
+                            status: Status.error,
+                          );
+                          return;
+                        }
+                        if (_speechToText.isNotListening) {
+                          SpeechToTextController.startListening(
+                            setRecording,
+                            _speechEnabled,
+                            _speechToText,
+                            setNewState,
+                          );
+                        } else {
+                          SpeechToTextController.stopListening(
+                            _speechToText,
+                            setKeyword,
+                            setNewState,
+                          );
+                        }
+                      },
+                      child: GlowingMicButton(
+                        isListening: !_speechToText.isNotListening,
                       ),
                     ),
                   ),
-                ),
-
-
-                Center(
-                  child: GestureDetector(
-                    onTap:(){
-                      if (_speechToText.isNotListening) {
-                        _startListening();
-                      } else {
-                        _stopListening();
-                      }
-                    },
-                    child: CircleAvatar(
-                      backgroundColor: AppColors.primaryColor,
-                      radius: 30,
-                      child: Center(
-                        child: Icon(
-                          _speechToText.isNotListening ? Iconsax.stop : Iconsax.microphone,
-                          color: Colors.white,
-                        ),
-                      ),
+                  const Gap(10),
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      _speechToText.isListening
+                          ? _lastWords
+                          : _speechEnabled
+                          ? 'Tap the microphone to start listening...'
+                          : 'Speech not available',
                     ),
                   ),
-                ),
-                const Gap(10),
-                Container(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    _speechToText.isListening
-                        ? _lastWords
-                        : _speechEnabled
-                        ? 'Tap the microphone to start listening...'
-                        : 'Speech not available',
-                  ),
-                ),
-              ],
-              if (isRecording) ...[
-                AudioWaveforms(
-                  enableGesture: false,
-                  size: Size(size.width, 100),
-                  recorderController: recorderController,
-                  waveStyle: const WaveStyle(
-                    waveColor: Color(0xFFB39DDB), // light purple
-                    showMiddleLine: true,
-                    extendWaveform: true,
-                    middleLineColor: Colors.deepPurple,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  margin: const EdgeInsets.only(top: 20),
-                ),
-              ],
+                  const Gap(10),
+                ],
 
-              isDoneRecording
-                  ? ListTile(
-                      leading: const Icon(Icons.mic_none),
-                      title: Text('Your Recording'),
-                      subtitle: Text(recording.dateTime),
-                      trailing: Wrap(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              recording.isPlaying
-                                  ? Iconsax.pause
-                                  : Iconsax.play,
+                isDoneRecording
+                    ? TextFormField(
+                        controller: _query,
+                        maxLines: 4,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintStyle: TextStyle(color: AppColors.lighterGrey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                            borderSide: BorderSide(color: Colors.grey.shade400),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                            borderSide: const BorderSide(
                               color: AppColors.primaryColor,
-                            ),
-                            onPressed: () =>
-                                AudioRecordingController.playPauseRecording(
-                                  recording,
-                                  audioPlayer,
-                                  pauseRecordingSetups,
-                                ),
-                          ),
-                          IconButton(
-                            onPressed: () => RecipeController.sendRequest(
-                              context,
-                              selectedFile,
-                              isDoneRecording,
-                              recording,
-                              _model,
-                              removeFile,
-                            ),
-                            icon: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 3,
-                              children: [
-                                const Icon(
-                                  Iconsax.send_1,
-                                  color: AppColors.primaryColor,
-                                ),
-                                Text(
-                                  "Send Request",
-                                  style: TextStyle(
-                                    color: AppColors.primaryColor,
-                                  ),
-                                ),
-                              ],
+                              width: 2.0,
                             ),
                           ),
-                        ],
-                      ),
-                    )
-                  : SizedBox.shrink(),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12.0,
+                            horizontal: 16.0,
+                          ),
+                        ),
+                        style: const TextStyle(
+                          fontSize: 14.0,
+                          color: Colors.black,
+                        ),
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.newline,
+                      )
+                    : SizedBox.shrink(),
+              ],
             ],
           ),
         ),
@@ -362,4 +296,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-

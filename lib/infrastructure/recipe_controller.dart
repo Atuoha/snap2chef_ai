@@ -10,19 +10,19 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_strings.dart';
 import '../core/constants/enums/status.dart';
-import '../domain/model/recording.dart';
 import '../presentation/components/toast_info.dart';
 
 class RecipeController {
-
-
   // send image to gemini
   static Future<void> _sendImageToGemini(
     File? selectedFile,
     GenerativeModel model,
     BuildContext context,
     Function removeFile,
+    Function removeText,
   ) async {
+    toastInfo(msg: "Obtaining recipe and preparations", status: Status.success);
+    
     if (selectedFile == null) return;
 
     final bytes = await selectedFile.readAsBytes();
@@ -35,34 +35,39 @@ class RecipeController {
     ]);
 
     if (context.mounted) {
-      _displayRecipe(response.text, context, selectedFile, removeFile);
+      _displayRecipe(
+        response.text,
+        context,
+        selectedFile,
+        removeFile,
+        removeText,
+      );
     }
   }
 
-  // transcribe audio and send to gemini
-  static Future<void> _transcribeAudioAndSendToGemini(
+  // send audio text prompt
+  static Future<void> _sendAudioTextPrompt(
     GenerativeModel model,
     BuildContext context,
+    String transcribedText,
     File? selectedFile,
-    Recording recording,
     Function removeFile,
+    Function removeText,
   ) async {
-    toastInfo(msg: "Transcribing audio...", status: Status.success);
-    File file = File(recording.filePath);
-    final bytes = await file.readAsBytes();
-    final audio = DataPart('audio/mpeg', bytes);
+    toastInfo(msg: "Obtaining recipe and preparations", status: Status.success);
 
-    final response = await model.generateContent([
-      Content.multi([
-        TextPart(
-          "Please transcribe this voice note and generate a recipe from it.",
-        ),
-        audio,
-      ]),
-    ]);
+    final prompt = '${AppStrings.AI_AUDIO_PART} ${transcribedText.trim()}.';
+    final content = [Content.text(prompt)];
+    final response = await model.generateContent(content);
 
     if (context.mounted) {
-      _displayRecipe(response.text, context, selectedFile, removeFile);
+      _displayRecipe(
+        response.text,
+        context,
+        selectedFile,
+        removeFile,
+        removeText,
+      );
     }
   }
 
@@ -71,6 +76,7 @@ class RecipeController {
     BuildContext context,
     File? selectedFile,
     Function removeFile,
+    Function removeText,
   ) {
     if (recipeText == null || recipeText.isEmpty) {
       recipeText = "No recipe could be generated or parsed from the response.";
@@ -183,7 +189,11 @@ class RecipeController {
               onPressed: () {
                 ytController?.dispose();
                 Navigator.of(dialogContext).pop();
-                removeFile();
+                if (selectedFile != null) {
+                  removeFile();
+                } else {
+                  removeText();
+                }
               },
               child: const Text('Close'),
             ),
@@ -196,23 +206,30 @@ class RecipeController {
   static void sendRequest(
     BuildContext context,
     File? selectedFile,
-    bool isDoneRecording,
-    Recording recording,
     GenerativeModel model,
     Function removeFile,
+    String transcribedText,
+    Function removeText,
   ) async {
     context.showLoader();
-    toastInfo(msg: "Processing", status: Status.success);
+    toastInfo(msg: "Processing...", status: Status.success);
     try {
       if (selectedFile != null) {
-        await _sendImageToGemini(selectedFile, model, context, removeFile);
-      } else if (isDoneRecording && recording.filePath.isNotEmpty) {
-        await _transcribeAudioAndSendToGemini(
+        await _sendImageToGemini(
+          selectedFile,
           model,
           context,
-          selectedFile,
-          recording,
           removeFile,
+          removeText,
+        );
+      } else if (transcribedText.isNotEmpty) {
+        await _sendAudioTextPrompt(
+          model,
+          context,
+          transcribedText,
+          selectedFile,
+          removeFile,
+          removeText,
         );
       }
     } catch (e) {
