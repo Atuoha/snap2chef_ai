@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -22,7 +23,7 @@ class RecipeController {
     Function removeText,
   ) async {
     toastInfo(msg: "Obtaining recipe and preparations", status: Status.success);
-    
+
     if (selectedFile == null) return;
 
     final bytes = await selectedFile.readAsBytes();
@@ -81,30 +82,32 @@ class RecipeController {
     if (recipeText == null || recipeText.isEmpty) {
       recipeText = "No recipe could be generated or parsed from the response.";
     }
-    if (kDebugMode) {
-      print("Recipe Text: $recipeText");
-    }
     String workingRecipeText = recipeText;
 
-    // Remove youtube url and prepare youtube url
-    final youtubeUrlRegex = RegExp(
-      r'(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=|embed\/|v\/|)([\w-]{11})(?:\S+)?',
-      caseSensitive: false,
-    );
-
     String? videoId;
+    String? extractedImageUrl;
 
-    final match = youtubeUrlRegex.firstMatch(recipeText);
-    if (kDebugMode) {
-      print("Match: $match");
+    final youtubeLineRegex = RegExp(r'YouTube Video URL:\s*(https?:\/\/\S+)', caseSensitive: false);
+    final youtubeMatch = youtubeLineRegex.firstMatch(recipeText);
+    if (youtubeMatch != null) {
+      final youtubeUrl = youtubeMatch.group(1);
+      final ytIdRegex = RegExp(r'v=([\w-]{11})');
+      final ytIdMatch = ytIdRegex.firstMatch(youtubeUrl ?? '');
+      if (ytIdMatch != null) {
+        videoId = ytIdMatch.group(1);
+      }
+      workingRecipeText = workingRecipeText.replaceAll(youtubeMatch.group(0)!, '').trim();
     }
-    if (match != null && match.groupCount >= 1) {
-      videoId = match.group(1)?.trim();
-      workingRecipeText = recipeText.replaceAll(youtubeUrlRegex, '').trim();
+
+    final imageLine = RegExp(r'Image URL:\s*(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|bmp|svg))');
+    final imageMatch = imageLine.firstMatch(recipeText);
+    if (imageMatch != null) {
+      extractedImageUrl = imageMatch.group(1);
+      workingRecipeText = workingRecipeText.replaceAll(imageMatch.group(0)!, '').trim();
     }
-    if (kDebugMode) {
-      print("Youtube ID: $videoId");
-    }
+
+    print("Extracted Image URL: $extractedImageUrl");
+    print("Extracted Video ID: $videoId");
 
     String? cleanedRecipeText = workingRecipeText;
 
@@ -148,7 +151,21 @@ class RecipeController {
                           ),
                         ),
                       )
-                    : SizedBox.shrink(),
+                    :  extractedImageUrl != null
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(7),
+                  child: CachedNetworkImage(
+                    imageUrl: extractedImageUrl,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) =>
+                        Image.asset('assets/images/placeholder.png', fit: BoxFit.cover),
+                    errorWidget: (context, url, error) =>
+                        Image.asset('assets/images/placeholder.png', fit: BoxFit.cover),
+                  ),
+                )
+                    : const SizedBox.shrink(),
                 Gap(16),
                 MarkdownBody(
                   data: cleanedRecipeText,
