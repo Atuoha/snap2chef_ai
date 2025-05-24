@@ -14,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Recipe Generator',
+      title: 'Snap2Chef',
       home: LoaderOverlay(
         overlayWidgetBuilder: (_) {
           return Center(
